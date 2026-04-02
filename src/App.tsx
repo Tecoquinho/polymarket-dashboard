@@ -177,7 +177,14 @@ export default function App() {
     const totalPnl = totalReturned - totalInvested;
     const avgPnl = total > 0 ? (totalPnl / total).toFixed(2) : '0';
 
-    return { total, wins, losses, winrate, totalInvested, totalReturned, totalPnl, avgPnl };
+    // Cálculo do PNL Semanal (últimos 7 dias a partir de hoje)
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyPnl = filteredTrades
+      .filter(t => new Date(t.timestamp * 1000) >= sevenDaysAgo)
+      .reduce((s, t) => s + t.pnl, 0);
+
+    return { total, wins, losses, winrate, totalInvested, totalReturned, totalPnl, avgPnl, weeklyPnl };
   }, [filteredTrades]);
 
   const equityData = useMemo(() => {
@@ -309,7 +316,7 @@ export default function App() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
             <StatCard 
               label="Lucro Total" 
-              value={`$${stats.totalPnl.toFixed(2)}`} 
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.totalPnl)} 
               icon={<DollarSign className="w-4 h-4" />}
               trend={stats.totalPnl >= 0 ? 'up' : 'down'}
             />
@@ -320,19 +327,19 @@ export default function App() {
               subValue={`${stats.wins}W / ${stats.losses}L`}
             />
             <StatCard 
-              label="Total Apostado" 
-              value={`$${stats.totalInvested.toLocaleString()}`} 
-              icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
+              label="PNL Semanal" 
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.weeklyPnl)} 
+              icon={<Calendar className="w-4 h-4 text-purple-400" />}
+              trend={stats.weeklyPnl >= 0 ? 'up' : 'down'}
+              subValue="Últimos 7 dias"
             />
             <StatCard 
               label="Média por Aposta" 
-              value={`$${stats.avgPnl}`} 
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(stats.avgPnl))} 
               icon={<RefreshCcw className="w-4 h-4" />}
               trend={Number(stats.avgPnl) >= 0 ? 'up' : 'down'}
             />
           </div>
-
-          {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl">
               <div className="flex justify-between items-center mb-6">
