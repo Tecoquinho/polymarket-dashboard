@@ -1,0 +1,5 @@
+{
+  "name": "Polymarket Pro Dashboard",
+  "description": "Análise avançada de histórico de apostas Polymarket com filtros de data e gráficos interativos.",
+  "requestFramePermissions": []
+}
