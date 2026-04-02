@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, useCallback, ChangeEvent, ReactNode } from 'react';
+import { useState, useMemo, useCallback, ChangeEvent, ReactNode, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   AreaChart, Area, PieChart, Pie, Cell, Legend
@@ -47,6 +47,10 @@ export default function App() {
   const [endDate, setEndDate] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    document.title = "Polymarket Pro";
+  }, []);
 
   // --- CSV Processing ---
   const processCSV = useCallback((text: string) => {
