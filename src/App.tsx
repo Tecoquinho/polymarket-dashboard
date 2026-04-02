@@ -164,10 +164,11 @@ export default function App() {
   // --- Stats ---
   const stats = useMemo(() => {
     const total = filteredTrades.length;
-    const wins = filteredTrades.filter(t => t.result === 'WIN').length;
+    // Contando EVEN como WIN conforme solicitado
+    const wins = filteredTrades.filter(t => t.result === 'WIN' || t.result === 'EVEN').length;
     const losses = filteredTrades.filter(t => t.result === 'LOSS').length;
     
-    // Winrate baseado apenas em trades decididos (Win vs Loss)
+    // Winrate baseado em trades decididos (agora incluindo EVEN como WIN)
     const decidedTrades = wins + losses;
     const winrate = decidedTrades > 0 ? (wins / decidedTrades * 100).toFixed(1) : '0';
     
@@ -204,7 +205,7 @@ export default function App() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <BarChart3 className="text-blue-500 w-8 h-8" />
-            Polymarket <span className="text-blue-500">Pro</span>
+            Polymarket Pro
           </h1>
           <p className="text-zinc-500 text-sm mt-1">Análise avançada de performance e histórico</p>
         </div>
