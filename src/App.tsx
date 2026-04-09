@@ -25,7 +25,8 @@ function cn(...inputs: ClassValue[]) {
 interface Trade {
   marketName: string;
   tokenName: string;
-  invested: number;
+  grossInvested: number;
+  capitalUsed: number;
   returned: number;
   pnl: number;
   result: 'WIN' | 'LOSS' | 'EVEN';
@@ -33,10 +34,18 @@ interface Trade {
   dateStr: string;
 }
 
+interface TradeAction {
+  marketName: string;
+  action: 'Buy' | 'Redeem' | 'Sell';
+  usdcAmount: number;
+  timestamp: number;
+  dateStr: string;
+}
+
 interface DailyStats {
   date: string;
   dateLabel: string;
-  invested: number;
+  capitalUsed: number;
   pnl: number;
   gainPct: number;
   trades: number;
@@ -44,6 +53,7 @@ interface DailyStats {
 
 export default function App() {
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [actions, setActions] = useState<TradeAction[]>([]);
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -78,10 +88,23 @@ export default function App() {
       return Object.fromEntries(headers.map((h, i) => [h, cols[i] ?? '']));
     });
 
+    const normalizedActions: TradeAction[] = [];
     const markets: Record<string, { buys: any[]; redeems: any[]; sells: any[] }> = {};
 
     rows.forEach(r => {
       if (!['Buy', 'Redeem', 'Sell'].includes(r.action)) return;
+      const timestamp = Number(r.timestamp);
+      const usdcAmount = Number(r.usdcAmount);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(usdcAmount)) return;
+
+      normalizedActions.push({
+        marketName: r.marketName,
+        action: r.action as TradeAction['action'],
+        usdcAmount,
+        timestamp,
+        dateStr: format(new Date(timestamp * 1000), 'yyyy-MM-dd')
+      });
+
       if (!markets[r.marketName]) markets[r.marketName] = { buys: [], redeems: [], sells: [] };
       if (r.action === 'Buy') markets[r.marketName].buys.push(r);
       if (r.action === 'Redeem') markets[r.marketName].redeems.push(r);
@@ -93,22 +116,36 @@ export default function App() {
     Object.entries(markets).forEach(([name, data]) => {
       if (!data.buys.length) return;
 
-      const invested = data.buys.reduce((s, b) => s + Number(b.usdcAmount), 0);
+      const grossInvested = data.buys.reduce((s, b) => s + Number(b.usdcAmount), 0);
       const redeem = data.redeems.reduce((s, r) => s + Number(r.usdcAmount), 0);
       const sell = data.sells.reduce((s, r) => s + Number(r.usdcAmount), 0);
       const returned = redeem + sell;
-      const pnl = Math.round((returned - invested) * 100) / 100;
+      const pnl = Math.round((returned - grossInvested) * 100) / 100;
 
       const result = pnl > 0.001 ? 'WIN' : pnl < -0.001 ? 'LOSS' : 'EVEN';
       const tokenName = data.buys[0].tokenName || '-';
 
       const allActions = [...data.buys, ...data.redeems, ...data.sells];
+      allActions.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+      let runningCapital = 0;
+      let peakCapital = 0;
+      allActions.forEach((action) => {
+        const amount = Number(action.usdcAmount);
+        if (action.action === 'Buy') {
+          runningCapital += amount;
+          peakCapital = Math.max(peakCapital, runningCapital);
+          return;
+        }
+        runningCapital = Math.max(0, runningCapital - amount);
+      });
+
       const ts = Math.max(...allActions.map(a => Number(a.timestamp)));
 
       processedTrades.push({
         marketName: name,
         tokenName,
-        invested,
+        grossInvested,
+        capitalUsed: Math.round(peakCapital * 100) / 100,
         returned,
         pnl,
         result,
@@ -119,6 +156,8 @@ export default function App() {
 
     processedTrades.sort((a, b) => a.timestamp - b.timestamp);
     setTrades(processedTrades);
+    normalizedActions.sort((a, b) => a.timestamp - b.timestamp);
+    setActions(normalizedActions);
 
     if (processedTrades.length > 0) {
       setStartDate(processedTrades[0].dateStr);
@@ -144,7 +183,8 @@ export default function App() {
       demo.push({
         marketName: `Mercado Demo ${i + 1}`,
         tokenName: Math.random() > 0.5 ? 'Yes' : 'No',
-        invested: 100,
+        grossInvested: 100,
+        capitalUsed: 100,
         returned: 100 + pnl,
         pnl: Math.round(pnl * 100) / 100,
         result: pnl > 0.001 ? 'WIN' : pnl < -0.001 ? 'LOSS' : 'EVEN',
@@ -153,6 +193,22 @@ export default function App() {
       });
     }
     setTrades(demo);
+    setActions(demo.flatMap((trade) => [
+      {
+        marketName: trade.marketName,
+        action: 'Buy' as const,
+        usdcAmount: trade.grossInvested,
+        timestamp: trade.timestamp - 3600,
+        dateStr: format(new Date((trade.timestamp - 3600) * 1000), 'yyyy-MM-dd')
+      },
+      {
+        marketName: trade.marketName,
+        action: 'Redeem' as const,
+        usdcAmount: trade.returned,
+        timestamp: trade.timestamp,
+        dateStr: trade.dateStr
+      }
+    ]));
     setStartDate(demo[0].dateStr);
     setEndDate(demo[demo.length - 1].dateStr);
   };
@@ -170,15 +226,28 @@ export default function App() {
     });
   }, [trades, startDate, endDate, searchTerm]);
 
+  const filteredActions = useMemo(() => {
+    return actions.filter(a => {
+      const date = parseISO(a.dateStr);
+      const start = startDate ? startOfDay(parseISO(startDate)) : null;
+      const end = endDate ? endOfDay(parseISO(endDate)) : null;
+
+      const matchesDate = (!start || date >= start) && (!end || date <= end);
+      const matchesSearch = a.marketName.toLowerCase().includes(searchTerm.toLowerCase());
+
+      return matchesDate && matchesSearch;
+    });
+  }, [actions, startDate, endDate, searchTerm]);
+
   const stats = useMemo(() => {
     const total = filteredTrades.length;
     const wins = filteredTrades.filter(t => t.result === 'WIN' || t.result === 'EVEN').length;
     const losses = filteredTrades.filter(t => t.result === 'LOSS').length;
     const decidedTrades = wins + losses;
     const winrate = decidedTrades > 0 ? (wins / decidedTrades * 100).toFixed(1) : '0';
-    const totalInvested = filteredTrades.reduce((s, t) => s + t.invested, 0);
+    const totalGrossInvested = filteredTrades.reduce((s, t) => s + t.grossInvested, 0);
     const totalReturned = filteredTrades.reduce((s, t) => s + t.returned, 0);
-    const totalPnl = totalReturned - totalInvested;
+    const totalPnl = totalReturned - totalGrossInvested;
     const avgPnl = total > 0 ? (totalPnl / total).toFixed(2) : '0';
 
     const now = new Date();
@@ -187,8 +256,23 @@ export default function App() {
       .filter(t => new Date(t.timestamp * 1000) >= sevenDaysAgo)
       .reduce((s, t) => s + t.pnl, 0);
 
-    return { total, wins, losses, winrate, totalInvested, totalReturned, totalPnl, avgPnl, weeklyPnl };
-  }, [filteredTrades]);
+    let runningCapital = 0;
+    let maxCapital = 0;
+    filteredActions
+      .slice()
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .forEach((action) => {
+        if (action.action === 'Buy') {
+          runningCapital += action.usdcAmount;
+          maxCapital = Math.max(maxCapital, runningCapital);
+          return;
+        }
+        runningCapital = Math.max(0, runningCapital - action.usdcAmount);
+      });
+
+    const realRoiPct = maxCapital > 0 ? (totalPnl / maxCapital) * 100 : 0;
+    return { total, wins, losses, winrate, totalGrossInvested, totalReturned, totalPnl, avgPnl, weeklyPnl, maxCapital, realRoiPct };
+  }, [filteredTrades, filteredActions]);
 
   const equityData = useMemo(() => {
     let cumulative = 0;
@@ -210,22 +294,45 @@ export default function App() {
       const current = byDay.get(trade.dateStr) ?? {
         date: trade.dateStr,
         dateLabel: format(parseISO(trade.dateStr), 'dd/MM', { locale: ptBR }),
-        invested: 0,
+        capitalUsed: 0,
         pnl: 0,
         gainPct: 0,
         trades: 0,
       };
 
-      current.invested += trade.invested;
       current.pnl += trade.pnl;
       current.trades += 1;
-      current.gainPct = current.invested > 0 ? (current.pnl / current.invested) * 100 : 0;
 
       byDay.set(trade.dateStr, current);
     });
 
+    const actionsByDay = new Map<string, TradeAction[]>();
+    filteredActions.forEach((action) => {
+      const list = actionsByDay.get(action.dateStr) ?? [];
+      list.push(action);
+      actionsByDay.set(action.dateStr, list);
+    });
+
+    byDay.forEach((day, dateStr) => {
+      const dayActions = (actionsByDay.get(dateStr) ?? []).sort((a, b) => a.timestamp - b.timestamp);
+      let runningCapital = 0;
+      let peakCapital = 0;
+
+      dayActions.forEach((action) => {
+        if (action.action === 'Buy') {
+          runningCapital += action.usdcAmount;
+          peakCapital = Math.max(peakCapital, runningCapital);
+          return;
+        }
+        runningCapital = Math.max(0, runningCapital - action.usdcAmount);
+      });
+
+      day.capitalUsed = Math.round(peakCapital * 100) / 100;
+      day.gainPct = day.capitalUsed > 0 ? (day.pnl / day.capitalUsed) * 100 : 0;
+    });
+
     return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filteredTrades]);
+  }, [filteredTrades, filteredActions]);
 
   const pieData = [
     { name: 'Wins', value: stats.wins, color: '#10b981' },
@@ -350,17 +457,23 @@ export default function App() {
               subValue={`${stats.wins}W / ${stats.losses}L`}
             />
             <StatCard
-              label="PNL Semanal"
-              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.weeklyPnl)}
+              label="Banca Utilizada"
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.maxCapital)}
               icon={<Calendar className="w-4 h-4 text-purple-400" />}
-              trend={stats.weeklyPnl >= 0 ? 'up' : 'down'}
-              subValue="Últimos 7 dias"
+              subValue="Pico simultaneo no periodo"
             />
             <StatCard
               label="Média por Aposta"
               value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(stats.avgPnl))}
               icon={<RefreshCcw className="w-4 h-4" />}
               trend={Number(stats.avgPnl) >= 0 ? 'up' : 'down'}
+            />
+            <StatCard
+              label="ROI Real"
+              value={`${stats.realRoiPct >= 0 ? '+' : ''}${stats.realRoiPct.toFixed(2)}%`}
+              icon={<Percent className="w-4 h-4" />}
+              trend={stats.realRoiPct >= 0 ? 'up' : 'down'}
+              subValue={`Sobre ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.maxCapital)} de banca utilizada`}
             />
           </div>
 
@@ -443,7 +556,7 @@ export default function App() {
               <h3 className="font-semibold flex items-center gap-2">
                 <Percent className="w-5 h-5 text-blue-400" /> Performance Diaria
               </h3>
-              <span className="text-xs text-zinc-500">% de ganho sobre o total investido no dia</span>
+              <span className="text-xs text-zinc-500">% de ganho sobre o pico de capital em risco no dia</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -451,7 +564,7 @@ export default function App() {
                   <tr className="bg-zinc-800/30 text-zinc-400">
                     <th className="px-6 py-4 font-medium">Dia</th>
                     <th className="px-6 py-4 font-medium">Trades</th>
-                    <th className="px-6 py-4 font-medium">Investido</th>
+                    <th className="px-6 py-4 font-medium">Capital</th>
                     <th className="px-6 py-4 font-medium text-right">PnL</th>
                     <th className="px-6 py-4 font-medium text-right">% Gain</th>
                   </tr>
@@ -461,7 +574,7 @@ export default function App() {
                     <tr key={day.date} className="hover:bg-zinc-800/20 transition-colors">
                       <td className="px-6 py-4 font-medium text-zinc-200">{day.dateLabel}</td>
                       <td className="px-6 py-4 text-zinc-400">{day.trades}</td>
-                      <td className="px-6 py-4 text-zinc-400">${day.invested.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-zinc-400">${day.capitalUsed.toFixed(2)}</td>
                       <td className={cn(
                         'px-6 py-4 font-bold text-right',
                         day.pnl > 0 ? 'text-emerald-500' : day.pnl < 0 ? 'text-rose-500' : 'text-zinc-500'
@@ -499,7 +612,7 @@ export default function App() {
                     <th className="px-6 py-4 font-medium">Data</th>
                     <th className="px-6 py-4 font-medium">Mercado</th>
                     <th className="px-6 py-4 font-medium">Lado</th>
-                    <th className="px-6 py-4 font-medium">Investido</th>
+                    <th className="px-6 py-4 font-medium">Capital</th>
                     <th className="px-6 py-4 font-medium text-right">PnL</th>
                     <th className="px-6 py-4 font-medium text-center">Status</th>
                   </tr>
@@ -530,7 +643,7 @@ export default function App() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-zinc-400">
-                          ${trade.invested.toFixed(2)}
+                          ${trade.capitalUsed.toFixed(2)}
                         </td>
                         <td className={cn(
                           'px-6 py-4 font-bold text-right',
