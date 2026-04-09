@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Polymarket Pro Dashboard
 
-# Run and deploy your AI Studio app
+Advanced dashboard for analyzing Polymarket betting history with professional-grade metrics and interactive visualizations.
 
-This contains everything you need to run your app locally.
+![Dashboard Preview](https://picsum.photos/seed/polymarket/1200/600)
 
-View your app in AI Studio: https://ai.studio/apps/57bde3e4-8ff6-413c-9f47-5b74096de585
+## Features
 
-## Run Locally
+- CSV import for Polymarket history.
+- Date range filtering and market search.
+- Weekly PnL summary for the last 7 days.
+- Daily gain percentage table by invested capital per day.
+- Equity curve and detailed history.
+- Responsive layout for desktop and mobile.
 
-**Prerequisites:**  Node.js
+## Tech Stack
 
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Recharts
+- Lucide React
+- Motion
+- date-fns
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Getting Started
+
+1. Clone the repository.
+2. Run `npm install`.
+3. Run `npm run dev`.
+4. Open `http://localhost:3000`.
+
+## License
+
+Apache-2.0

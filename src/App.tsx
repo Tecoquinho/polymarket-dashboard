@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, useCallback, ChangeEvent, ReactNode } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+import { useState, useMemo, useCallback, ChangeEvent, ReactNode, useEffect } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { 
-  TrendingUp, TrendingDown, Calendar, Upload, BarChart3, 
+import {
+  TrendingUp, TrendingDown, Calendar, Upload, BarChart3,
   History, DollarSign, Percent, Filter, RefreshCcw, Search
 } from 'lucide-react';
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
@@ -18,12 +18,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// --- Utility ---
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// --- Types ---
 interface Trade {
   marketName: string;
   tokenName: string;
@@ -51,7 +49,10 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- CSV Processing ---
+  useEffect(() => {
+    document.title = 'Polymarket Pro';
+  }, []);
+
   const processCSV = useCallback((text: string) => {
     const lines = text.trim().split('\n');
     if (lines.length < 2) return;
@@ -59,17 +60,25 @@ export default function App() {
     const headers = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.replace(/"/g, '').trim());
     const rows = lines.slice(1).map(line => {
       const cols: string[] = [];
-      let cur = "", inQ = false;
+      let cur = '';
+      let inQ = false;
       for (const ch of line) {
-        if (ch === '"') { inQ = !inQ; continue; }
-        if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
-        else cur += ch;
+        if (ch === '"') {
+          inQ = !inQ;
+          continue;
+        }
+        if (ch === ',' && !inQ) {
+          cols.push(cur.trim());
+          cur = '';
+        } else {
+          cur += ch;
+        }
       }
       cols.push(cur.trim());
-      return Object.fromEntries(headers.map((h, i) => [h, cols[i] ?? ""]));
+      return Object.fromEntries(headers.map((h, i) => [h, cols[i] ?? '']));
     });
 
-    const markets: Record<string, { buys: any[], redeems: any[], sells: any[] }> = {};
+    const markets: Record<string, { buys: any[]; redeems: any[]; sells: any[] }> = {};
 
     rows.forEach(r => {
       if (!['Buy', 'Redeem', 'Sell'].includes(r.action)) return;
@@ -89,9 +98,12 @@ export default function App() {
       const sell = data.sells.reduce((s, r) => s + Number(r.usdcAmount), 0);
       const returned = redeem + sell;
       const pnl = Math.round((returned - invested) * 100) / 100;
-      const result = pnl > 0.01 ? 'WIN' : pnl < -0.01 ? 'LOSS' : 'EVEN';
-      const tokenName = data.buys[0].tokenName || '—';
-      const ts = Math.min(...data.buys.map(b => Number(b.timestamp)));
+
+      const result = pnl > 0.001 ? 'WIN' : pnl < -0.001 ? 'LOSS' : 'EVEN';
+      const tokenName = data.buys[0].tokenName || '-';
+
+      const allActions = [...data.buys, ...data.redeems, ...data.sells];
+      const ts = Math.max(...allActions.map(a => Number(a.timestamp)));
 
       processedTrades.push({
         marketName: name,
@@ -107,7 +119,7 @@ export default function App() {
 
     processedTrades.sort((a, b) => a.timestamp - b.timestamp);
     setTrades(processedTrades);
-    
+
     if (processedTrades.length > 0) {
       setStartDate(processedTrades[0].dateStr);
       setEndDate(processedTrades[processedTrades.length - 1].dateStr);
@@ -118,7 +130,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (ev) => processCSV(ev.target?.result as string);
+      reader.onload = ev => processCSV(ev.target?.result as string);
       reader.readAsText(file);
     }
   };
@@ -126,16 +138,16 @@ export default function App() {
   const loadDemoData = () => {
     const demo: Trade[] = [];
     const now = Date.now() / 1000;
-    for (let i = 0; i < 30; i++) {
-      const ts = now - (30 - i) * 86400;
-      const pnl = Math.random() * 200 - 80;
+    for (let i = 0; i < 60; i++) {
+      const ts = now - (60 - i) * 86400;
+      const pnl = Math.random() > 0.4 ? Math.random() * 150 : -Math.random() * 100;
       demo.push({
         marketName: `Mercado Demo ${i + 1}`,
         tokenName: Math.random() > 0.5 ? 'Yes' : 'No',
         invested: 100,
         returned: 100 + pnl,
         pnl: Math.round(pnl * 100) / 100,
-        result: pnl > 0 ? 'WIN' : 'LOSS',
+        result: pnl > 0.001 ? 'WIN' : pnl < -0.001 ? 'LOSS' : 'EVEN',
         timestamp: ts,
         dateStr: format(new Date(ts * 1000), 'yyyy-MM-dd')
       });
@@ -145,32 +157,37 @@ export default function App() {
     setEndDate(demo[demo.length - 1].dateStr);
   };
 
-  // --- Filtering ---
   const filteredTrades = useMemo(() => {
     return trades.filter(t => {
       const date = parseISO(t.dateStr);
       const start = startDate ? startOfDay(parseISO(startDate)) : null;
       const end = endDate ? endOfDay(parseISO(endDate)) : null;
-      
+
       const matchesDate = (!start || date >= start) && (!end || date <= end);
       const matchesSearch = t.marketName.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       return matchesDate && matchesSearch;
     });
   }, [trades, startDate, endDate, searchTerm]);
 
-  // --- Stats ---
   const stats = useMemo(() => {
     const total = filteredTrades.length;
-    const wins = filteredTrades.filter(t => t.result === 'WIN').length;
+    const wins = filteredTrades.filter(t => t.result === 'WIN' || t.result === 'EVEN').length;
     const losses = filteredTrades.filter(t => t.result === 'LOSS').length;
-    const winrate = total > 0 ? (wins / total * 100).toFixed(1) : '0';
+    const decidedTrades = wins + losses;
+    const winrate = decidedTrades > 0 ? (wins / decidedTrades * 100).toFixed(1) : '0';
     const totalInvested = filteredTrades.reduce((s, t) => s + t.invested, 0);
     const totalReturned = filteredTrades.reduce((s, t) => s + t.returned, 0);
     const totalPnl = totalReturned - totalInvested;
     const avgPnl = total > 0 ? (totalPnl / total).toFixed(2) : '0';
 
-    return { total, wins, losses, winrate, totalInvested, totalReturned, totalPnl, avgPnl };
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyPnl = filteredTrades
+      .filter(t => new Date(t.timestamp * 1000) >= sevenDaysAgo)
+      .reduce((s, t) => s + t.pnl, 0);
+
+    return { total, wins, losses, winrate, totalInvested, totalReturned, totalPnl, avgPnl, weeklyPnl };
   }, [filteredTrades]);
 
   const equityData = useMemo(() => {
@@ -189,7 +206,7 @@ export default function App() {
   const dailyStats = useMemo<DailyStats[]>(() => {
     const byDay = new Map<string, DailyStats>();
 
-    filteredTrades.forEach((trade) => {
+    filteredTrades.forEach(trade => {
       const current = byDay.get(trade.dateStr) ?? {
         date: trade.dateStr,
         dateLabel: format(parseISO(trade.dateStr), 'dd/MM', { locale: ptBR }),
@@ -217,18 +234,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 p-4 md:p-8 font-sans">
-      {/* Header */}
       <header className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <BarChart3 className="text-blue-500 w-8 h-8" />
-            Polymarket <span className="text-blue-500">Pro</span>
+            Polymarket Pro
           </h1>
           <p className="text-zinc-500 text-sm mt-1">Análise avançada de performance e histórico</p>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
-          <button 
+          <button
             onClick={loadDemoData}
             className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
@@ -242,12 +258,12 @@ export default function App() {
       </header>
 
       {trades.length === 0 ? (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
-            "max-w-3xl mx-auto mt-20 border-2 border-dashed rounded-2xl p-12 text-center transition-colors",
-            isDragging ? "border-blue-500 bg-blue-500/5" : "border-zinc-800 bg-zinc-900/50"
+            'max-w-3xl mx-auto mt-20 border-2 border-dashed rounded-2xl p-12 text-center transition-colors',
+            isDragging ? 'border-blue-500 bg-blue-500/5' : 'border-zinc-800 bg-zinc-900/50'
           )}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
@@ -277,9 +293,7 @@ export default function App() {
         </motion.div>
       ) : (
         <div className="max-w-7xl mx-auto space-y-6">
-          
-          {/* Filters Bar */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl flex flex-wrap items-center gap-6"
@@ -291,15 +305,15 @@ export default function App() {
 
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-zinc-500" />
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="bg-zinc-800 border-none rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
               <span className="text-zinc-600">até</span>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="bg-zinc-800 border-none rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -308,8 +322,8 @@ export default function App() {
 
             <div className="flex-1 min-w-[200px] relative">
               <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Buscar mercado..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -322,34 +336,34 @@ export default function App() {
             </div>
           </motion.div>
 
-          {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
-            <StatCard 
-              label="Lucro Total" 
-              value={`$${stats.totalPnl.toFixed(2)}`} 
+            <StatCard
+              label="Lucro Total"
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.totalPnl)}
               icon={<DollarSign className="w-4 h-4" />}
               trend={stats.totalPnl >= 0 ? 'up' : 'down'}
             />
-            <StatCard 
-              label="Win Rate" 
-              value={`${stats.winrate}%`} 
+            <StatCard
+              label="Win Rate"
+              value={`${stats.winrate}%`}
               icon={<Percent className="w-4 h-4" />}
               subValue={`${stats.wins}W / ${stats.losses}L`}
             />
-            <StatCard 
-              label="Total Apostado" 
-              value={`$${stats.totalInvested.toLocaleString()}`} 
-              icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
+            <StatCard
+              label="PNL Semanal"
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.weeklyPnl)}
+              icon={<Calendar className="w-4 h-4 text-purple-400" />}
+              trend={stats.weeklyPnl >= 0 ? 'up' : 'down'}
+              subValue="Últimos 7 dias"
             />
-            <StatCard 
-              label="Média por Aposta" 
-              value={`$${stats.avgPnl}`} 
+            <StatCard
+              label="Média por Aposta"
+              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(stats.avgPnl))}
               icon={<RefreshCcw className="w-4 h-4" />}
               trend={Number(stats.avgPnl) >= 0 ? 'up' : 'down'}
             />
           </div>
 
-          {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl">
               <div className="flex justify-between items-center mb-6">
@@ -363,37 +377,24 @@ export default function App() {
                   <AreaChart data={equityData}>
                     <defs>
                       <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                    <XAxis 
-                      dataKey="date" 
-                      stroke="#71717a" 
-                      fontSize={12} 
-                      tickLine={false} 
-                      axisLine={false} 
-                    />
-                    <YAxis 
-                      stroke="#71717a" 
-                      fontSize={12} 
-                      tickLine={false} 
-                      axisLine={false} 
+                    <XAxis dataKey="date" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis
+                      stroke="#71717a"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
                       tickFormatter={(v) => `$${v}`}
                     />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
                       itemStyle={{ color: '#3b82f6' }}
                     />
-                    <Area 
-                      type="monotone" 
-                      dataKey="pnl" 
-                      stroke="#3b82f6" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#colorPnl)" 
-                    />
+                    <Area type="monotone" dataKey="pnl" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorPnl)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -419,10 +420,8 @@ export default function App() {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
-                    />
-                    <Legend verticalAlign="bottom" height={36}/>
+                    <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }} />
+                    <Legend verticalAlign="bottom" height={36} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -463,20 +462,16 @@ export default function App() {
                       <td className="px-6 py-4 font-medium text-zinc-200">{day.dateLabel}</td>
                       <td className="px-6 py-4 text-zinc-400">{day.trades}</td>
                       <td className="px-6 py-4 text-zinc-400">${day.invested.toFixed(2)}</td>
-                      <td
-                        className={cn(
-                          "px-6 py-4 font-bold text-right",
-                          day.pnl > 0 ? "text-emerald-500" : day.pnl < 0 ? "text-rose-500" : "text-zinc-500"
-                        )}
-                      >
+                      <td className={cn(
+                        'px-6 py-4 font-bold text-right',
+                        day.pnl > 0 ? 'text-emerald-500' : day.pnl < 0 ? 'text-rose-500' : 'text-zinc-500'
+                      )}>
                         {day.pnl > 0 ? '+' : ''}${day.pnl.toFixed(2)}
                       </td>
-                      <td
-                        className={cn(
-                          "px-6 py-4 font-bold text-right",
-                          day.gainPct > 0 ? "text-emerald-500" : day.gainPct < 0 ? "text-rose-500" : "text-zinc-500"
-                        )}
-                      >
+                      <td className={cn(
+                        'px-6 py-4 font-bold text-right',
+                        day.gainPct > 0 ? 'text-emerald-500' : day.gainPct < 0 ? 'text-rose-500' : 'text-zinc-500'
+                      )}>
                         {day.gainPct > 0 ? '+' : ''}{day.gainPct.toFixed(2)}%
                       </td>
                     </tr>
@@ -491,7 +486,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* History Table */}
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
               <h3 className="font-semibold flex items-center gap-2">
@@ -512,13 +506,13 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   <AnimatePresence mode="popLayout">
-                    {filteredTrades.slice().reverse().map((trade, idx) => (
-                      <motion.tr 
+                    {filteredTrades.slice().reverse().map((trade) => (
+                      <motion.tr
                         layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        key={trade.marketName + trade.timestamp} 
+                        key={trade.marketName + trade.timestamp}
                         className="hover:bg-zinc-800/20 transition-colors"
                       >
                         <td className="px-6 py-4 text-zinc-500">
@@ -529,8 +523,8 @@ export default function App() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] uppercase font-bold",
-                            trade.tokenName === 'Yes' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
+                            'px-2 py-0.5 rounded text-[10px] uppercase font-bold',
+                            trade.tokenName === 'Yes' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
                           )}>
                             {trade.tokenName}
                           </span>
@@ -539,16 +533,16 @@ export default function App() {
                           ${trade.invested.toFixed(2)}
                         </td>
                         <td className={cn(
-                          "px-6 py-4 font-bold text-right",
-                          trade.pnl > 0 ? "text-emerald-500" : trade.pnl < 0 ? "text-rose-500" : "text-zinc-500"
+                          'px-6 py-4 font-bold text-right',
+                          trade.pnl > 0 ? 'text-emerald-500' : trade.pnl < 0 ? 'text-rose-500' : 'text-zinc-500'
                         )}>
                           {trade.pnl > 0 ? '+' : ''}${trade.pnl.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={cn(
-                            "px-2 py-1 rounded-full text-[10px] font-bold",
-                            trade.result === 'WIN' ? "bg-emerald-500/20 text-emerald-500" : 
-                            trade.result === 'LOSS' ? "bg-rose-500/20 text-rose-500" : "bg-zinc-700 text-zinc-400"
+                            'px-2 py-1 rounded-full text-[10px] font-bold',
+                            trade.result === 'WIN' ? 'bg-emerald-500/20 text-emerald-500' :
+                            trade.result === 'LOSS' ? 'bg-rose-500/20 text-rose-500' : 'bg-zinc-700 text-zinc-400'
                           )}>
                             {trade.result}
                           </span>
@@ -571,10 +565,10 @@ export default function App() {
   );
 }
 
-function StatCard({ label, value, icon, trend, subValue }: { 
-  label: string; 
-  value: string; 
-  icon: ReactNode; 
+function StatCard({ label, value, icon, trend, subValue }: {
+  label: string;
+  value: string;
+  icon: ReactNode;
   trend?: 'up' | 'down';
   subValue?: string;
 }) {
@@ -586,8 +580,8 @@ function StatCard({ label, value, icon, trend, subValue }: {
         </div>
         {trend && (
           <div className={cn(
-            "flex items-center gap-0.5 text-xs font-bold",
-            trend === 'up' ? "text-emerald-500" : "text-rose-500"
+            'flex items-center gap-0.5 text-xs font-bold',
+            trend === 'up' ? 'text-emerald-500' : 'text-rose-500'
           )}>
             {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
           </div>
