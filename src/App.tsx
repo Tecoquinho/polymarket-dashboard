@@ -347,7 +347,7 @@ export default function App() {
             <BarChart3 className="text-blue-500 w-8 h-8" />
             Polymarket Pro
           </h1>
-          <p className="text-zinc-500 text-sm mt-1">Análise avançada de performance e histórico</p>
+          <p className="text-zinc-500 text-sm mt-1">AnÃ¡lise avanÃ§ada de performance e histÃ³rico</p>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -388,9 +388,9 @@ export default function App() {
           <div className="bg-zinc-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
             <Upload className="w-8 h-8 text-zinc-400" />
           </div>
-          <h2 className="text-xl font-semibold mb-2">Comece carregando seu histórico</h2>
+          <h2 className="text-xl font-semibold mb-2">Comece carregando seu histÃ³rico</h2>
           <p className="text-zinc-500 mb-8 max-w-md mx-auto">
-            Arraste o arquivo CSV exportado do Polymarket ou clique no botão acima para analisar seus lucros e perdas.
+            Arraste o arquivo CSV exportado do Polymarket ou clique no botÃ£o acima para analisar seus lucros e perdas.
           </p>
           <div className="flex justify-center gap-4">
             <div className="text-xs text-zinc-600 bg-zinc-800/50 px-3 py-1 rounded-full">Buy</div>
@@ -418,7 +418,7 @@ export default function App() {
                 onChange={(e) => setStartDate(e.target.value)}
                 className="bg-zinc-800 border-none rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-              <span className="text-zinc-600">até</span>
+              <span className="text-zinc-600">atÃ©</span>
               <input
                 type="date"
                 value={endDate}
@@ -463,12 +463,6 @@ export default function App() {
               subValue="Pico simultaneo no periodo"
             />
             <StatCard
-              label="Média por Aposta"
-              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(stats.avgPnl))}
-              icon={<RefreshCcw className="w-4 h-4" />}
-              trend={Number(stats.avgPnl) >= 0 ? 'up' : 'down'}
-            />
-            <StatCard
               label="ROI Real"
               value={`${stats.realRoiPct >= 0 ? '+' : ''}${stats.realRoiPct.toFixed(2)}%`}
               icon={<Percent className="w-4 h-4" />}
@@ -481,7 +475,7 @@ export default function App() {
             <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-blue-500" /> Curva de Patrimônio
+                  <TrendingUp className="w-5 h-5 text-blue-500" /> Curva de PatrimÃ´nio
                 </h3>
                 <div className="text-xs text-zinc-500">PnL Acumulado ($)</div>
               </div>
@@ -515,7 +509,7 @@ export default function App() {
 
             <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl flex flex-col">
               <h3 className="font-semibold mb-6 flex items-center gap-2">
-                <History className="w-5 h-5 text-purple-500" /> Distribuição
+                <History className="w-5 h-5 text-purple-500" /> DistribuiÃ§Ã£o
               </h3>
               <div className="flex-1 h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -602,7 +596,7 @@ export default function App() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
               <h3 className="font-semibold flex items-center gap-2">
-                <History className="w-5 h-5 text-zinc-400" /> Histórico Detalhado
+                <History className="w-5 h-5 text-zinc-400" /> HistÃ³rico Detalhado
               </h3>
             </div>
             <div className="overflow-x-auto">
