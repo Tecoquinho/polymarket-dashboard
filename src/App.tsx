@@ -239,54 +239,6 @@ export default function App() {
     });
   }, [actions, startDate, endDate, searchTerm]);
 
-  const stats = useMemo(() => {
-    const total = filteredTrades.length;
-    const wins = filteredTrades.filter(t => t.result === 'WIN' || t.result === 'EVEN').length;
-    const losses = filteredTrades.filter(t => t.result === 'LOSS').length;
-    const decidedTrades = wins + losses;
-    const winrate = decidedTrades > 0 ? (wins / decidedTrades * 100).toFixed(1) : '0';
-    const totalGrossInvested = filteredTrades.reduce((s, t) => s + t.grossInvested, 0);
-    const totalReturned = filteredTrades.reduce((s, t) => s + t.returned, 0);
-    const totalPnl = totalReturned - totalGrossInvested;
-    const avgPnl = total > 0 ? (totalPnl / total).toFixed(2) : '0';
-
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const weeklyPnl = filteredTrades
-      .filter(t => new Date(t.timestamp * 1000) >= sevenDaysAgo)
-      .reduce((s, t) => s + t.pnl, 0);
-
-    let runningCapital = 0;
-    let maxCapital = 0;
-    filteredActions
-      .slice()
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .forEach((action) => {
-        if (action.action === 'Buy') {
-          runningCapital += action.usdcAmount;
-          maxCapital = Math.max(maxCapital, runningCapital);
-          return;
-        }
-        runningCapital = Math.max(0, runningCapital - action.usdcAmount);
-      });
-
-    const realRoiPct = maxCapital > 0 ? (totalPnl / maxCapital) * 100 : 0;
-    return { total, wins, losses, winrate, totalGrossInvested, totalReturned, totalPnl, avgPnl, weeklyPnl, maxCapital, realRoiPct };
-  }, [filteredTrades, filteredActions]);
-
-  const equityData = useMemo(() => {
-    let cumulative = 0;
-    return filteredTrades.map(t => {
-      cumulative += t.pnl;
-      return {
-        date: format(new Date(t.timestamp * 1000), 'dd/MM', { locale: ptBR }),
-        pnl: Math.round(cumulative * 100) / 100,
-        tradePnl: t.pnl,
-        market: t.marketName
-      };
-    });
-  }, [filteredTrades]);
-
   const dailyStats = useMemo<DailyStats[]>(() => {
     const byDay = new Map<string, DailyStats>();
 
@@ -334,6 +286,57 @@ export default function App() {
     return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredTrades, filteredActions]);
 
+  const stats = useMemo(() => {
+    const total = filteredTrades.length;
+    const wins = filteredTrades.filter(t => t.result === 'WIN' || t.result === 'EVEN').length;
+    const losses = filteredTrades.filter(t => t.result === 'LOSS').length;
+    const decidedTrades = wins + losses;
+    const winrate = decidedTrades > 0 ? (wins / decidedTrades * 100).toFixed(1) : '0';
+    const totalGrossInvested = filteredTrades.reduce((s, t) => s + t.grossInvested, 0);
+    const totalReturned = filteredTrades.reduce((s, t) => s + t.returned, 0);
+    const totalPnl = totalReturned - totalGrossInvested;
+    const avgPnl = total > 0 ? (totalPnl / total).toFixed(2) : '0';
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyPnl = filteredTrades
+      .filter(t => new Date(t.timestamp * 1000) >= sevenDaysAgo)
+      .reduce((s, t) => s + t.pnl, 0);
+    const weeklyRoiPct = dailyStats
+      .filter(day => parseISO(day.date) >= startOfDay(sevenDaysAgo))
+      .reduce((sum, day) => sum + day.gainPct, 0);
+
+    let runningCapital = 0;
+    let maxCapital = 0;
+    filteredActions
+      .slice()
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .forEach((action) => {
+        if (action.action === 'Buy') {
+          runningCapital += action.usdcAmount;
+          maxCapital = Math.max(maxCapital, runningCapital);
+          return;
+        }
+        runningCapital = Math.max(0, runningCapital - action.usdcAmount);
+      });
+
+    const summedDailyRoiPct = dailyStats.reduce((sum, day) => sum + day.gainPct, 0);
+    return { total, wins, losses, winrate, totalGrossInvested, totalReturned, totalPnl, avgPnl, weeklyPnl, weeklyRoiPct, maxCapital, summedDailyRoiPct };
+  }, [filteredTrades, filteredActions, dailyStats]);
+
+  const equityData = useMemo(() => {
+    let cumulative = 0;
+    return filteredTrades.map(t => {
+      cumulative += t.pnl;
+      return {
+        date: format(new Date(t.timestamp * 1000), 'dd/MM', { locale: ptBR }),
+        pnl: Math.round(cumulative * 100) / 100,
+        tradePnl: t.pnl,
+        market: t.marketName
+      };
+    });
+  }, [filteredTrades]);
+
   const pieData = [
     { name: 'Wins', value: stats.wins, color: '#10b981' },
     { name: 'Losses', value: stats.losses, color: '#ef4444' }
@@ -347,7 +350,7 @@ export default function App() {
             <BarChart3 className="text-blue-500 w-8 h-8" />
             Polymarket Pro
           </h1>
-          <p className="text-zinc-500 text-sm mt-1">AnÃ¡lise avanÃ§ada de performance e histÃ³rico</p>
+          <p className="text-zinc-500 text-sm mt-1">Análise avançada de performance e histórico</p>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -388,9 +391,9 @@ export default function App() {
           <div className="bg-zinc-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
             <Upload className="w-8 h-8 text-zinc-400" />
           </div>
-          <h2 className="text-xl font-semibold mb-2">Comece carregando seu histÃ³rico</h2>
+          <h2 className="text-xl font-semibold mb-2">Comece carregando seu histórico</h2>
           <p className="text-zinc-500 mb-8 max-w-md mx-auto">
-            Arraste o arquivo CSV exportado do Polymarket ou clique no botÃ£o acima para analisar seus lucros e perdas.
+            Arraste o arquivo CSV exportado do Polymarket ou clique no botão acima para analisar seus lucros e perdas.
           </p>
           <div className="flex justify-center gap-4">
             <div className="text-xs text-zinc-600 bg-zinc-800/50 px-3 py-1 rounded-full">Buy</div>
@@ -418,7 +421,7 @@ export default function App() {
                 onChange={(e) => setStartDate(e.target.value)}
                 className="bg-zinc-800 border-none rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-              <span className="text-zinc-600">atÃ©</span>
+              <span className="text-zinc-600">até</span>
               <input
                 type="date"
                 value={endDate}
@@ -457,17 +460,18 @@ export default function App() {
               subValue={`${stats.wins}W / ${stats.losses}L`}
             />
             <StatCard
-              label="Banca Utilizada"
-              value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.maxCapital)}
+              label="ROI Semanal"
+              value={`${stats.weeklyRoiPct >= 0 ? '+' : ''}${stats.weeklyRoiPct.toFixed(2)}%`}
               icon={<Calendar className="w-4 h-4 text-purple-400" />}
-              subValue="Pico simultaneo no periodo"
+              trend={stats.weeklyRoiPct >= 0 ? 'up' : 'down'}
+              subValue="Soma dos percentuais dos últimos 7 dias"
             />
             <StatCard
-              label="ROI Real"
-              value={`${stats.realRoiPct >= 0 ? '+' : ''}${stats.realRoiPct.toFixed(2)}%`}
+              label="ROI Diário Acum."
+              value={`${stats.summedDailyRoiPct >= 0 ? '+' : ''}${stats.summedDailyRoiPct.toFixed(2)}%`}
               icon={<Percent className="w-4 h-4" />}
-              trend={stats.realRoiPct >= 0 ? 'up' : 'down'}
-              subValue={`Sobre ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.maxCapital)} de banca utilizada`}
+              trend={stats.summedDailyRoiPct >= 0 ? 'up' : 'down'}
+              subValue="Soma dos percentuais diários"
             />
           </div>
 
@@ -475,7 +479,7 @@ export default function App() {
             <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-blue-500" /> Curva de PatrimÃ´nio
+                  <TrendingUp className="w-5 h-5 text-blue-500" /> Curva de Patrimônio
                 </h3>
                 <div className="text-xs text-zinc-500">PnL Acumulado ($)</div>
               </div>
@@ -509,7 +513,7 @@ export default function App() {
 
             <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl flex flex-col">
               <h3 className="font-semibold mb-6 flex items-center gap-2">
-                <History className="w-5 h-5 text-purple-500" /> DistribuiÃ§Ã£o
+                <History className="w-5 h-5 text-purple-500" /> Distribuição
               </h3>
               <div className="flex-1 h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -548,7 +552,7 @@ export default function App() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
               <h3 className="font-semibold flex items-center gap-2">
-                <Percent className="w-5 h-5 text-blue-400" /> Performance Diaria
+                <Percent className="w-5 h-5 text-blue-400" /> Performance Diária
               </h3>
               <span className="text-xs text-zinc-500">% de ganho sobre o pico de capital em risco no dia</span>
             </div>
@@ -596,7 +600,7 @@ export default function App() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
               <h3 className="font-semibold flex items-center gap-2">
-                <History className="w-5 h-5 text-zinc-400" /> HistÃ³rico Detalhado
+                <History className="w-5 h-5 text-zinc-400" /> Histórico Detalhado
               </h3>
             </div>
             <div className="overflow-x-auto">
